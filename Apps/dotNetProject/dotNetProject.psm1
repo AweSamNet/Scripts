@@ -675,3 +675,52 @@ function Unwatch-ProjectBuildKeywords(
 
     Get-WatchedProjectBuildKeywords $project
 }
+
+function Install-Vsix([String] $packageName)
+{
+    $errorActionPreference = "Stop"
+     
+    $baseProtocol = "https:"
+    $baseHostName = "marketplace.visualstudio.com"
+     
+    $uri = "$($baseProtocol)//$($baseHostName)/items?itemName=$($packageName)"
+    $vsixLocation = "$($env:Temp)\$([guid]::NewGuid()).vsix"
+     
+    $vsInstallDir = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\resources\app\ServiceHub\Services\Microsoft.VisualStudio.Setup.Service"
+     
+    if (!($vsInstallDir)) {
+        Write-Error "Visual Studio InstallDir registry key missing"
+        Exit 1
+    }
+     
+    Write-Host "Grabbing VSIX extension at $($uri)"
+    $html = Invoke-WebRequest -Uri $uri -UseBasicParsing -SessionVariable session
+     
+    Write-Host "Attempting to download $($packageName)..."
+    $anchor = $html.Links |
+    Where-Object { (HasProperty $_ "class") -and $_.class -eq 'install-button-container' } |
+    Select-Object -ExpandProperty href
+
+    if (!($anchor)) {
+      Write-Error "Could not find download anchor tag on the Visual Studio Extensions page"
+      Exit 1
+    }
+    Write-Host "Anchor is $($anchor)"
+    $href = "$($baseProtocol)//$($baseHostName)$($anchor)"
+    Write-Host "Href is $($href)"
+    Invoke-WebRequest $href -OutFile $vsixLocation -WebSession $session
+     
+    if (!(Test-Path $vsixLocation)) {
+      Write-Error "Downloaded VSIX file could not be located"
+      Exit 1
+    }
+    Write-Host "VSInstallDir is $($vsInstallDir)"
+    Write-Host "VSIXLocation is $($vsixLocation)"
+    Write-Host "Installing $($packageName)..."
+    Start-Process -Filepath "$($vsInstallDir)\VSIXInstaller" -ArgumentList "/q /a $($vsixLocation)" -Wait
+     
+    Write-Host "Cleanup..."
+    rm $vsixLocation
+    
+    Write-Host "Installation of $($packageName) complete!"
+}
