@@ -1154,6 +1154,22 @@ function Get-ObjectHasProperty($object, $propertyName)
 }
 Set-Alias HasProperty Get-ObjectHasProperty -Scope Global
 
+function Get-IsNullOrEmpty([Parameter(ValueFromPipeline=$True)]$value=$null)
+{
+    if($null -eq $value)
+    {
+        return $true
+    }
+    
+    if($value -is [array])
+    {
+        return @($value).Count -eq 0
+    }
+    
+    return $false
+}
+Set-Alias IsNullOrEmpty Get-IsNullOrEmpty -Scope Global
+
 if(-not(Test-Path Variable:\localModules) -or $localModules -eq $null)
 {
     Write-Output ""

@@ -8,13 +8,12 @@ new-alias msb2019 "$drive\Program Files (x86)\Microsoft Visual Studio\2019\Profe
 new-alias msb msb2019 -Scope Global
 
 #mstest location
-$mst = "$drive\Program Files (x86)\Microsoft Visual Studio\2017\Professional\Common7\IDE\MSTest.exe"
+$mst = "$drive\Program Files (x86)\Microsoft Visual Studio\2019\Professional\Common7\IDE\MSTest.exe"
 new-alias mst $mst -Scope Global
 
 #vstest location
-$vstest = "$drive\Program Files (x86)\Microsoft Visual Studio\2017\Professional\Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe"
+$vstest = "$drive\Program Files (x86)\Microsoft Visual Studio\2019\Professional\Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe"
 new-alias vstest $vstest -Scope Global
-
 
 if(-not(Test-Path Variable:\dotNetProjects) -or !$dotNetProjects)
 {
@@ -41,8 +40,13 @@ $dotNetProjects = @{
     BaseBranch = "next";        # the default branch to base new feature branches on
     PushRemote = "origin";      # default remote to push to
     SolutionPath = "...";
-    RepositoryUrl = "https://github.com/AweSamNet/AweSamNet/"
-    GitUserName = "slombardo"
+    RepositoryUrl = "https://github.com/AweSamNet/AweSamNet/";
+    GitUserName = "slombardo";
+    TestPaths = @(
+        ...,
+        ...,
+        ...
+    );
 }
     
 ------------------------------------------------------------------------------------------------'
@@ -156,8 +160,12 @@ function Build(
     [switch]$all, 
     [switch]$build, 
     [switch]$rebase, 
+    [switch]$tests,
     [string]$projectNames = $null,
+    [string[]]$testsToRun = $null,
     [switch]$pause,
+    [array]$testCategories,
+    [array]$ignoreTestCategories,
     [switch]$y
     )
 {   
@@ -168,6 +176,7 @@ function Build(
     $startTime = $(get-date)    
     $buildTime = $null
     $fetchTime = $null
+    $testRunTime = $null
     
     $output = @()
     try
@@ -177,6 +186,10 @@ function Build(
         {
             if( -not $rebase `
                 -and(-not $build) `
+                -and(-not $tests) `
+                -and(-not $testsToRun) `
+                -and(-not $testCategories) `
+                -and(-not $ignoreTestCategories) `
                 -and(-not $projectNames))
             {
                 $all = $true
@@ -210,7 +223,7 @@ function Build(
             Find-SurroundingText -text $buildOutput -regexPattern "(^|\W)($($keywords | % {"|$_"}) -join '')" | % {
                 $output += $_
             }
-            $buildTime = ($(get-date) - $buildStart).Ticks
+            $buildTime = ($(Get-Date) - $buildStart).Ticks
         }
         
         if(-not $?)
@@ -218,10 +231,24 @@ function Build(
             Write-Error 'Solution build failed.'
             return;
         }
+        
+        if($all -or $tests -or $testsToRun -or $testCategories -or $ignoreTestCategories)
+        {
+            $testsStart = $(Get-Date)
+            
+            # if(-not $ignoreTestCategories)
+            # {
+                # $ignoreTestCategories = @("IntegrationTest", "NotContinuous")
+            # }
+            
+            Run-ProjectTests -project:$project -testsToRun:$testsToRun -categories:$testCategories -ignoredCategories:$ignoreTestCategories
+
+            $testRunTime = ($(Get-Date) - $testsStart).Ticks
+        }
     }
     finally
     {
-        $elapsedTime = $(get-date) - $startTime
+        $elapsedTime = $(Get-Date) - $startTime
         $finishedAt = Get-Date
         
         Write-Host "Displaying failures and keywords:........... press enter to continue"
@@ -571,9 +598,9 @@ function New-ProjectBranch(
     $originalBranch = Get-CurrentBranch
     New-Branch -branchName:$branchName -branchFromRemote:$branchFromRemote -branchFrom:$branchFrom -noPrompt:$noPrompt
     Update-ProjectGit $project
-    $originalBranch = Get-CurrentBranch
-
-    Update-ProjectGit $project
+    
+    # push it to set the default upstream
+    git push -u $project.PushRemote $branchName -f
     
     Run-StashedOperation({
         git checkout $branchName
@@ -674,6 +701,293 @@ function Unwatch-ProjectBuildKeywords(
     Unwatch-Something -id:$id -storePath:$path
 
     Get-WatchedProjectBuildKeywords $project
+}
+
+function Run-ProjectTests(
+    [Parameter(Mandatory=$true)]$project,
+    [switch]$highlightFailed=$true,
+    [string[]] $testsToRun, 
+    [array]$categories, 
+    [array]$ignoredCategories)
+{
+    $project = getProject $project
+    
+    $testsExist = $false
+    
+    if($project.Keys -contains "TestPaths")
+    {
+        if(-not(IsNullOrEmpty $project.TestPaths))
+        {
+            $testsExist = $true
+        }
+    }
+
+    if(!$testsExist)
+    {
+        Write-Host "There are no specified tests to run."
+        return
+    }
+
+    Write-Host "Running Tests"
+
+    $command = '$failedTests = @();'
+    $command += '$results = "";'
+    $command += "vstest "
+    
+    $project.TestPaths | %{ $command += "'$_' "}
+    
+    
+    if($testsToRun)
+    {
+        $command += " /tests:"
+        $command += $testsToRun -join ','
+    }
+
+    Write-Host
+    $testCaseFilter = $null
+    if($categories -or $ignoredCategories)
+    {    
+        $command += " --testadapterpath:. "
+    }
+        
+    $categoriesFilter = $null
+    if($categories)
+    {
+        Write-Host "Running Test Categories: " -NoNewline
+        Write-Highlight $($categories -join " | ") -highlightColor Green
+        
+        $categoriesFilter = "($(($categories | %{ return "Category=$_" }) -join "|"))"
+        $testCaseFilter += $categoriesFilter
+    }
+    
+    $ignoredCategoriesFilter = $null
+    if($ignoredCategories)
+    {
+        Write-Host "Ignoring Tests: " -NoNewline
+        Write-Highlight $($ignoredCategories -join " | ")
+
+        $ignoredCategoriesFilter += "($(($ignoredCategories | %{ return "Category!=$_" }) -join "&"))"
+        
+        if($categoriesFilter)
+        {
+            $testCaseFilter += "&"
+        }
+        
+        $testCaseFilter += $ignoredCategoriesFilter
+    }
+    if($testCaseFilter -and -not $testsToRun)
+    {
+        $testCaseFilter = " --TestCaseFilter:`"$testCaseFilter`""
+
+        Write-Host $testCaseFilter
+        $command += $testCaseFilter
+    }
+    
+    Write-Host
+    # $command += " /Parallel "
+    # $command += " 2>&1 "
+    
+    if($highlightFailed)
+    {
+        $command += @'
+| % { 
+    if( $_ -match "^\s*failed\s+")
+    {
+        $failedTests += $_
+    }
+    
+    if($_ -match "^Total tests:")
+    {
+        $results = $_
+    }
+    return $_
+}
+'@
+        $command += " | Write-Highlight -textsToHighlight 'failed';"
+        $command += "    Save-ProjectTestResults $($project.Name)"
+        $command += ' $failedTests (Get-CurrentBranch) $results ` '
+    }
+
+    $lastBaseBranchTestResults = Get-ProjectLastTestResults -project:$project -branch:$project.BaseBranch 
+    
+    Invoke-Expression $command -ErrorAction SilentlyContinue -ErrorVariable Err `
+        | Write-Highlight -textsToHighlight "failed","Error"
+    
+    Write-ProjectTestResults $project $lastBaseBranchTestResults -testsToRun:$testsToRun    
+}
+
+function Save-ProjectTestResults([Parameter(Mandatory=$true)]$project, [string[]]$failedTests, $branch, $message)
+{
+    $project = getProject $project
+    $resultsPath = getTestResultsPath $project
+    
+    $now = $(Get-Date)
+    $testResults = @{
+        "date" = $now
+        "failedTests" = $failedTests
+        "branch" = $branch
+        "message" = $message
+    }
+    
+    $today = [System.DateTime]::Today
+    
+    $todayPath = Join-Path $resultsPath $project.Name | `
+        Join-Path -ChildPath $today.ToString("yyyy-MM") | `
+            Join-Path -ChildPath $today.ToString("yyyy-MM-dd")
+    
+    $allTestResults = @()
+    
+    if ((Test-Path ($todayPath)))
+    {      
+        $allTestResults = ConvertFrom-Json (Get-Content $todayPath -Raw)
+    }
+    
+    $list = {$allTestResults}.Invoke()
+    $list.Add($testResults)
+    
+    $body = ConvertTo-Json $list
+    
+    New-Item -ItemType File -Force -Path $todayPath -Value $body
+}
+
+function Get-ProjectLastTestResults([Parameter(Mandatory=$true)]$project, $start = $null, $end = $null, $branch)
+{
+    $project = getProject $project
+    $resultsPath = Join-Path $(getTestResultsPath $project) $project.Name 
+    
+
+    $allFiles = Get-DataFiles $resultsPath $start $end    
+
+    # return all entries as objects
+    $allFiles | Sort-Object FullName -Descending | % {
+        $body = Get-Content $_.FullName -Raw 
+        
+        if($body)
+        {
+            $testResults = ConvertFrom-Json $body
+            if($testResults)
+            {
+                $testResults | Sort-Object date -Descending | where {
+                    $branch -eq $null -or($_.branch -eq $branch)
+                } | Select-Object -first 1
+            }
+        }
+    } | Select-Object -first 1
+}
+
+function  Write-ProjectTestResults ([Parameter(Mandatory=$true)]$project, $originalTestResults = @{}, [string[]] $testsToRun, [string]$branch)
+{            
+    $project = getProject $project
+    $resultsPath = getTestResultsPath $project
+    $lastTestResults = Get-ProjectLastTestResults $project
+    
+    "-------------------------------------------------------------"
+    "Failed Tests (newly failing tests highlighted): "
+    "-------------------------------------------------------------"
+    
+    $newlyFailedTests = @()
+    $failedTestPattern = "^\s*Failed\s+\S*\s?"
+    
+    foreach ($currentlyFailedTest in $lastTestResults.failedTests)
+    {
+        if($originalTestResults -eq $null -or( `
+            [bool]($originalTestResults.PSobject.Properties.name -match "failedTests")))
+        {
+            $match = [Regex]::Match($currentlyFailedTest, $failedTestPattern)
+
+            $failedTestExists = $false
+            foreach ($originallyFailedItem in $originalTestResults.failedTests)
+            {
+                if($originallyFailedItem -match $match.Value)
+                {
+                    $failedTestExists = $true
+                    break;
+                }
+            }
+            
+            if(!$failedTestExists)
+            {
+                Write-Highlight $currentlyFailedTest
+                $newlyFailedTests += $currentlyFailedTest
+                continue
+            }            
+        }
+        
+        Write-Host $currentlyFailedTest
+    }
+    
+    $currentBranch = IIf $branch $branch "current $($lastTestResults.branch):"
+
+    if(!$testsToRun)
+    {
+        if($originalTestResults -and [bool]($originalTestResults.PSobject.Properties.name -match "failedTests"))
+        {
+            $newlyPassedTests = @()
+            
+            foreach ($originallyFailedTest in $originalTestResults.failedTests)
+            {
+                $match = [Regex]::Match($originallyFailedTest, $failedTestPattern)
+                
+                # if the originally failing test matches our pattern
+                if($match.Success)
+                {
+                    $isStillFailing = $false
+                    
+                    # loop through the currently failing tests
+                    foreach ($currentlyFailedTest in $lastTestResults.failedTests)
+                    {
+                        # if currently failing test matches the previously failing test, then it still fails
+                        if($currentlyFailedTest -match $match.Value)
+                        {
+                            $isStillFailing = $true
+                            break
+                        }
+                    }
+
+                    if(!$isStillFailing)
+                    {
+                        $newlyPassedTests += $match.Value
+                    }
+                    continue
+                }
+                
+                if(-not($lastTestResults.failedTests -contains $originallyFailedTest))
+                {
+                    $newlyPassedTests += $match.Value
+                }
+            }
+            
+            if($newlyPassedTests)
+            {
+                "-------------------------------------------------------------"
+                "Newly Passed Tests: "
+                "-------------------------------------------------------------"
+            }
+            
+            $newlyPassedTests | %{
+                Write-Highlight $_ -highlightColor Green
+            }
+        }
+                
+        for($i = $currentBranch.length; $i -lt 27; $i++)
+        {
+            $currentBranch += " "
+        }
+        
+        Write-Host
+        if($originalTestResults -and [bool]($originalTestResults.PSobject.Properties.name -match "failedTests"))
+        {
+            Write-Host "Base branch $($project.BaseBranch) ($($originalTestResults.date)): $($originalTestResults.message )"
+        }
+    }
+    Write-Host "$currentBranch $($lastTestResults.message )"
+    
+    if(!$lastTestResults.failedTests -or !$newlyFailedTests)
+    {
+        $message = IIf $lastTestResults.failedTests "(ish).  (Some tests failed, but they also failed on base branch $($project.BaseBranch))" ""
+        Write-Host
+        Write-Highlight "     ALL TESTS PASS$message!     " -highlightColor Green
+    }
 }
 
 function Install-Vsix([String] $packageName)
