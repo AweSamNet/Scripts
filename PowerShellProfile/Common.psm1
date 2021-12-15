@@ -1166,9 +1166,31 @@ function Get-IsNullOrEmpty([Parameter(ValueFromPipeline=$True)]$value=$null)
         return @($value).Count -eq 0
     }
     
+    if($value -is [string])
+    {
+        return [string]::IsNullOrEmpty($value)
+    }
+    
     return $false
 }
 Set-Alias IsNullOrEmpty Get-IsNullOrEmpty -Scope Global
+
+function Download-AndExtractZip($url, $destinationFolder)
+{
+    $zipFile = Download-File $url
+    $extractedFolderName = [io.path]::GetFileNameWithoutExtension($zipFile)
+    $destination = Join-Path $destinationFolder $extractedFolderName
+    Expand-Archive -Path $zipFile -DestinationPath $destination;
+}
+
+function Download-File($url)
+{
+    $downloadFolder = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
+    $filePath = Join-Path $downloadFolder (Split-Path -Path $url -Leaf) 
+    
+    Invoke-WebRequest -Uri $url -OutFile $filePath 
+    return $filePath
+}
 
 if(-not(Test-Path Variable:\localModules) -or $localModules -eq $null)
 {

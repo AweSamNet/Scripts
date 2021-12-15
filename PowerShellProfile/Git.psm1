@@ -33,7 +33,8 @@ function Get-LatestCode(
     $baseRemote="upstream", 
     $baseBranch="next", 
     $pushRemote="origin", 
-    [Switch]$a, 
+    [Switch]$a,
+    [switch]$subModuleUpdate,
     [switch]$silent,
     $branchWatchStorePath,
     [switch]$pause)
@@ -75,7 +76,10 @@ function Get-LatestCode(
     
     #always rebase the local branch based on the remote branch
     git rebase $baseRemote/$baseBranch
-    git submodule update --recursive --init --progress
+    if($subModuleUpdate)
+    {
+        git submodule update --recursive --init --rebase --progress
+    }
 
     
     # now push base branch to push remote if different to keep it up to date
@@ -248,7 +252,11 @@ function Run-StashedOperation([Parameter(Mandatory=$true)][scriptblock]$command)
 }
 Set-Alias stash Run-StashedOperation -Scope Global
 
-function New-Branch([Parameter(Mandatory=$true)]$branchName, [Parameter(Mandatory=$true)]$branchFromRemote, [Parameter(Mandatory=$true)]$branchFrom, [switch]$noPrompt)
+function New-Branch(
+    [Parameter(Mandatory=$true)]$branchName, 
+    [Parameter(Mandatory=$true)]$branchFromRemote, 
+    [Parameter(Mandatory=$true)]$branchFrom, 
+    [switch]$noPrompt)
 {
     $created = $False
     $stashed = $False
@@ -272,7 +280,7 @@ function New-Branch([Parameter(Mandatory=$true)]$branchName, [Parameter(Mandator
                 git reset --hard
 
                 # Remove all untracked files and directories.
-                git clean -fd
+                git clean -fdx
             }
 
             #if we are forcing noPrompt, or the user wants to stash changes, then stash.  Otherwise cancel out.
