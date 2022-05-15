@@ -500,7 +500,7 @@ function Update-ProjectGit(
     
     $gitpStart = $(get-date) 
 
-    gitp -baseRemote:$baseRemote -baseBranch:$baseBranch -a -pushRemote:$project.PushRemote -branchWatchStorePath:$watchPath -silent:$y -pause:$pause | % {
+    gitp -baseRemote:$baseRemote -baseBranch:$baseBranch -a -pushRemote:$project.PushRemote -branchWatchStorePath:$watchPath -silent:$y -subModuleUpdate -pause:$pause | % {
         if($_ -match "(--abort|CONFLICT|It looks like git-am is in progress)")
         {
             $rebaseSuccess = $false
