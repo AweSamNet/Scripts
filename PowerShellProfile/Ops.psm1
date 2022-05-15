@@ -1,3 +1,8 @@
+[CmdletBinding()]
+param(
+    $defaultRoot = "C:\",
+    $localModules
+)
 ### 
 ### Operations related functionality
 ###
@@ -6,8 +11,16 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$global:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
+
 $opsScriptPath = (Get-Item $MyInvocation.MyCommand.Definition).FullName
 
+$defaultWatchedChocolateyInstallPath = Join-Path $ScriptPath "Watched\ChocolateyInstalls.txt"
+$defaultSystemNotificationsPath = Join-Path $ScriptPath "Watched\SystemNotifications.txt"
+
+$argmentList = $psBoundParameters.Values | % { $_ }
+
+#Import "Common" -ArgumentList:$argmentList
 function Edit-Ops
 {
     notepad++ $opsScriptPath
@@ -93,8 +106,6 @@ function Notify-Windows(
     $objNotifyIcon.Visible = $True 
     $objNotifyIcon.ShowBalloonTip(10000)
 }
-
-$defaultWatchedChocolateyInstallPath = Join-Path $ScriptPath "Watched\ChocolateyInstalls.txt"
 
 function Watch-ChocolateyInstall(
     [string]$appName,
@@ -252,6 +263,186 @@ function Enable-PSTranscriptionLogging([Parameter(Mandatory)][string]$OutputDire
      Set-ItemProperty $basePath -Name "EnableTranscripting" -Value "1"
      Set-ItemProperty $basePath -Name "OutputDirectory" -Value $OutputDirectory
 
+}
+
+Add-Type @'
+public enum NotificationSeverity {
+    High,
+    Medium,
+    Low,
+}
+'@
+
+function New-SystemNotification (
+    [Parameter(Mandatory)][NotificationSeverity]$severity,
+    [Parameter(Mandatory)][string]$source,
+    [Parameter(Mandatory)][string]$message
+    )
+{
+    $date = Get-Date
+    $notification = @{
+        Date = $date;
+        Severity = $severity;
+        Source = $source;
+        Message = $message;
+        
+    }
+
+    Add-Record -record:$notification -storePath:$defaultSystemNotificationsPath
+}
+
+function Get-SystemNotifications([switch]$format)
+{
+    $notifications = Get-Records -storePath:$defaultSystemNotificationsPath
+
+    if($format)
+    {
+        return Format-SystemNotifications $notifications
+    }
+    
+    return ,$notifications
+}
+
+function Format-SystemNotification([Parameter(ValueFromPipeline = $true)] $notification)
+{
+    process
+    {
+        $esc = "$([char]27)"
+        $defaultForeground = "$esc[0m"
+
+        $severityColor = "$esc[0m"
+        if($notification.Value.Severity -eq [NotificationSeverity]::High)
+        {
+            $severityColor = "$esc[91m"
+        }
+        elseif ($notification.Value.Severity -eq [NotificationSeverity]::Medium)
+        {
+            $severityColor = "$esc[93m"
+        }
+        
+        $severity = "$severityColor$([NotificationSeverity]$notification.Value.Severity)$defaultForeground"
+
+        return [PSCustomObject]@{
+            Id = $notification.Id;
+            Severity = $severity;
+            Date = $(Convert-UTCtoLocal $notification.Value.Date)
+            Source = $notification.Value.Source
+            Message = $notification.Value.Message
+        }
+    }
+}
+
+function Format-SystemNotifications($notifications)
+{
+    $esc = "$([char]27)"
+    $defaultForeground = "$esc[0m"
+    
+    if(!$notifications -or !($notifications |any) )
+    {
+        return
+    }
+
+    return $notifications | Sort-Object -Property `
+        @{Expression = {$_.Value.Severity}; Ascending = $true}, `
+        @{Expression = {$_.Value.Date}; Ascending = $true} | Format-SystemNotification | Format-Table -AutoSize
+}
+
+function Display-SystemNotifications()
+{
+    do
+    {
+        $notifications = Get-SystemNotifications
+        if(!$notifications)
+        {
+            return
+        }
+
+        Format-SystemNotifications $notifications
+
+        $answer = Read-Host "What would you like to do? Clear [a]ll, Read [0-9] Id, [Enter] Cancel)]"
+        $id = $answer -as [int]
+
+        if(!$answer -or !$answer.Trim())
+        {
+            return
+        }
+
+        if($answer -match "a")
+        {
+            Clear-SystemNotifications
+            Write-Host "System Notifications Cleared"        
+            return
+        }
+
+        if($answer -and $answer.Trim() -and $id)
+        {
+            if($notifications | any { $_.Id -eq $id })
+            {
+                $notification = $notifications | where { $_.Id -eq $id }
+                
+                while ($notification)
+                {
+                    clear
+                    $notification | Format-SystemNotification | Out-Host
+
+                    $options = @()
+                    $index = $notifications.indexOf($notification)
+                    
+                    if($index -ne 0)
+                    {
+                        $options += ,@([ConsoleKey]::LeftArrow, "[<] Previous")
+                    }
+                    
+                    if($index -ne $notifications.Count - 1)
+                    {
+                        $options += ,@([ConsoleKey]::RightArrow, "[>] Next")
+                    }
+                    
+                    $options += ,@([ConsoleKey]::Delete, "[Del] Delete")
+                    $options += ,@([ConsoleKey]::Enter, "[Enter] Return")
+                    
+                    $answer = Read-Input -singleKey -options:$options
+                    
+                    if($answer.VirtualKeyCode -eq [ConsoleKey]::LeftArrow)
+                    {
+                        $notification = $notifications[$index - 1]
+                        continue
+                    }
+                    
+                    if($answer.VirtualKeyCode -eq [ConsoleKey]::RightArrow)
+                    {
+                        $notification = $notifications[$index + 1]
+                        continue
+                    }
+                    
+                    if($answer.VirtualKeyCode -eq [ConsoleKey]::Enter)
+                    {
+                        clear
+                        break
+                    }
+                    
+                    if($answer.VirtualKeyCode -eq [ConsoleKey]::Delete)
+                    {
+                        Remove-Record -id:$notification.Id -storePath:$defaultSystemNotificationsPath
+
+                        if($index -eq $notifications.Count - 1)
+                        {
+                            clear
+                            break
+                        }
+                        
+                        $notifications = $notifications | where { $_.Id -ne $notification.Id }
+                        $notification = $notifications[$index]
+                    }
+                }
+            }
+        }
+    } until ($false)
+}
+
+function Clear-SystemNotifications()
+{
+    Clear-List -storePath:$defaultSystemNotificationsPath
 }
 
 Export-ModuleMember -Function  *-*

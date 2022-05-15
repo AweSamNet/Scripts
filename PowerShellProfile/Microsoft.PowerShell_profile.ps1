@@ -8,6 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+$ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $global:ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 $profileScriptPath = (Get-Item $MyInvocation.MyCommand.Definition).FullName

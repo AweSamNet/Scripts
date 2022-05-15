@@ -2,10 +2,13 @@
 ### Common Profile functions for all users
 ### Load module via `Import-Module $ScriptPath\Common -ArugmentList "C:\path"
 ###
+[CmdletBinding()]
 param(
     $defaultRoot = "C:\",
     $localModules
 )
+
+$boundParameters = $psBoundParameters.Values 
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -187,9 +190,9 @@ function Unprotect-File($InFile, $OutFile, $Password)
 
 function Reset-Modules([switch]$silent)
 {
-    Import Git @psBoundParameters 
-    Import Ops @psBoundParameters 
-    Import Github @psBoundParameters 
+    Import Git -ArgumentList:$boundParameters -silent:$silent 
+    Import Ops -ArgumentList:$boundParameters -silent:$silent
+    Import Github -ArgumentList:$boundParameters -silent:$silent
     
     if(Test-Path Variable:\localModules)
     {
@@ -976,7 +979,14 @@ function Suspend-Console([string]$message)
         Write-Host "$message.........."
     }
     Write-Host "Press any key to continue..."
-    $k = $host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')       
+    try
+    {
+        $k = $host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    }
+    catch
+    {
+        Read-Host
+    }
 }
 Set-Alias pause Suspend-Console -Scope Global
 
@@ -1055,8 +1065,8 @@ function Add-Record(
     $id = 0,
     [Parameter(Mandatory=$true)][string]$storePath    
 )
-{    
-    $list = Get-JsonFromFile $storePath
+{
+    $list = Get-Records $storePath
     
     if($list -eq $null)
     {
@@ -1081,11 +1091,7 @@ function Add-Record(
 Set-Alias Watch-Something Add-Record -Scope Global
 Set-Alias watch Add-Record -Scope Global
 
-function Remove-Record(
-    [scriptblock]$query,
-    [int]$id=0,
-    [Parameter(Mandatory=$true)][string]$storePath    
-)
+function Get-Records([Parameter(Mandatory=$true)][string]$storePath)
 {
     $toWatch = @()
     
@@ -1100,7 +1106,17 @@ function Remove-Record(
         $toWatch = ConvertFrom-Json $content
     }
     
-    $list = {$toWatch}.Invoke()
+    return ,$toWatch
+}
+Set-Alias Get-Watched Add-Record -Scope Global
+
+function Remove-Record(
+    [scriptblock]$query,
+    [int]$id=0,
+    [Parameter(Mandatory=$true)][string]$storePath
+)
+{
+    $list = Get-Records $storePath
     
     $toRemove = $null
 
@@ -1117,6 +1133,7 @@ function Remove-Record(
     
     if($toRemove)
     {
+        $list = [System.Collections.ArrayList]$list
         $success = $list.Remove($toRemove)
     } 
     
@@ -1225,5 +1242,107 @@ You can use the following as a template:
         Edit-Profile
     }
 }
+
+function Read-Input(
+    $message = "",
+    [Array] $options = @(),
+    [switch] $singleKey)
+{
+    $message = @($message)
+    if( $options | any { $_ -isNot [Array] -or $_.Count -ne 2 })
+    {
+        $argumentException = New-Object System.ArgumentException '$options must be a two-dimensional array of [key:string, text:string]'
+        throw $argumentException
+    }
+    
+    $message += ($options | % { $_[1] }) -join ", "
+    
+    if($singleKey)
+    {
+        do
+        {
+            Write-Host $message
+                # `r for enter
+                $answer = $host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+
+        } until ($options | any { $_[0] -eq $answer.Character -or $_[0] -eq $answer.VirtualKeyCode})
+    }
+    else
+    {
+        do
+        {
+            # "" for enter
+            $answer = Read-Host
+        } until ($options | any { $_[0].Trim() -eq $answer.Trim()})
+    }   
+    
+    return $answer
+}
+    
+function Read-Int(
+    
+    [Parameter(Mandatory=$true)][string]$prompt,
+    [ScriptBlock]$additionalValidation = $null
+    )
+{
+    $value = -1;
+    do {
+      $inputString = read-host $prompt
+      $value = $inputString -as [int]
+      $ok = $inputString -and $inputString.Trim() `
+        -and $value `
+        -and(!$additionalValidation -or (&$additionalValidation $value))
+      if ( -not $ok ) { write-host "You must enter an integer." }
+    }
+    until ( $ok )
+
+    return $value
+}
+
+function Test-AnyOld ([ScriptBlock]$FilterScript)
+{    
+    begin {
+        $done = $false
+    }
+    process { 
+        if (!$done)
+        {
+            # Note the use of $_ | ... to provide pipeline input
+            # and the use of ForEach-Object to evaluate the script block.
+            if (!$FilterScript -or ($_ | ForEach-Object $FilterScript)) {
+                $done = $true
+            }
+        }
+    }
+    end {
+        $done
+    }
+}
+
+function Test-Any {
+    [CmdletBinding()]
+    param(
+        [ScriptBlock] $Filter,
+        [Parameter(ValueFromPipeline = $true)] $InputObject
+    )
+    process {
+      if (-not $Filter -or (Foreach-Object $Filter -InputObject $InputObject)) {
+          $true # Signal that at least 1 [matching] object was found
+          # Now that we have our result, stop the upstream commands in the
+          # pipeline so that they don't create more, no-longer-needed input.
+          (Add-Type -Passthru -TypeDefinition '
+            using System.Management.Automation;
+            namespace net.same2u.PowerShell {
+              public static class CustomPipelineStopper {
+                public static void Stop(Cmdlet cmdlet) {
+                  throw (System.Exception) System.Activator.CreateInstance(typeof(Cmdlet).Assembly.GetType("System.Management.Automation.StopUpstreamCommandsException"), cmdlet);
+                }
+              }
+            }')::Stop($PSCmdlet)
+      }
+    }
+    end { $false }
+}
+Set-Alias any Test-Any -Scope Global
 
 Export-ModuleMember -Function *-*
