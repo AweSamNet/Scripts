@@ -42,6 +42,19 @@ function Backup-Path(
     Robocopy "$from" "$to" /MIR /XA:SH /R:$retryCount /W:$waitTime /LOG+:"$logPath" /tee /eta /fft > $null
 }
 
+function Restart-Pageant()
+{
+    $shortcutPath = Join-Path ([Environment]::GetFolderPath('Startup')) "pageant.lnk"
+
+    $process = Get-Process -Name pageant -ErrorAction SilentlyContinue
+    if($process)
+    {
+        Stop-Process $process -Force
+    }
+    
+    ii $shortcutPath
+}
+
 function Set-PageantStartup($keyFiles, $keysDirectory)
 {
     if(!$keysDirectory)
@@ -443,6 +456,38 @@ function Display-SystemNotifications()
 function Clear-SystemNotifications()
 {
     Clear-List -storePath:$defaultSystemNotificationsPath
+}
+
+# function Find-TextInFiles(
+    # [string] $fullPath=".", 
+    # [string[]]$textToFind, 
+    # [string[]]$filter="*", 
+    # [string[]]$exclude, 
+    # [switch]$fn, 
+    # [switch]$first, 
+    # [int]$parentProgressId, 
+    # [int]$totalThreads,
+    # [array]$files)
+    
+function Parse-PSTranscriptionLog(
+    [string]$transcriptionDirectory,
+    [string]$outputPath)
+{
+    $startTime = Get-Date
+    try
+    {
+        $lines = Find-TextInFiles -fullPath:$transcriptionDirectory -textToFind:"^\*+$" -regEx #| Out-File -FilePath $outputPath        
+        $lines = $lines | sort File, Line
+        
+        
+        
+    }
+    finally
+    {
+        $result = ($(get-date) - $startTime)
+        Write-Host $result
+    }
+    
 }
 
 Export-ModuleMember -Function  *-*

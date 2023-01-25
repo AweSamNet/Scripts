@@ -265,7 +265,8 @@ function Find-TextInFiles(
     [switch]$first, 
     [int]$parentProgressId, 
     [int]$totalThreads,
-    [array]$files)
+    [array]$files,
+    [switch]$regEx)
 {
     $fullPath = Convert-Path $fullPath
     try
@@ -339,7 +340,8 @@ function Find-TextInFiles(
                 [array]$filesSplit,
                 [array]$textToFind,
                 $first,
-                $fn
+                $fn,
+                [bool]$regEx
             )
             $exit = $false
 
@@ -355,7 +357,15 @@ function Find-TextInFiles(
                 $null
 
                 $textToFind | ForEach-Object{
-                    $escapedText = [Regex]::Escape($_)
+                    if($regEx)
+                    {
+                        $escapedText = $_
+                    }
+                    else
+                    {
+                        $escapedText = [Regex]::Escape($_)
+                    }
+
                     if($fn -and ($file.Name -match $escapedText))
                     {
                         $fileLinePair = @{
@@ -385,7 +395,15 @@ function Find-TextInFiles(
                         $lineCount++
                         foreach($text in $textToFind)
                         {
-                            $escapedText = [Regex]::Escape($text)
+                            if($regEx)
+                            {
+                                $escapedText = $text
+                            }
+                            else
+                            {
+                                $escapedText = [Regex]::Escape($text)
+                            }
+
                             #Write-Host $escapedText
                             if($_ -match $($escapedText))
                             {
@@ -428,7 +446,7 @@ function Find-TextInFiles(
         # split the files into segments and run the threads
         for($i = 0; $i -lt $totalThreads; $i++)
         {
-            $jobs += Start-Job -ScriptBlock $searchThread -ArgumentList $marker,$fileSplits[$i],$textToFind,$first,$fn | ForEach-Object{            
+            $jobs += Start-Job -ScriptBlock $searchThread -ArgumentList $marker,$fileSplits[$i],$textToFind,$first,$fn,$regEx | ForEach-Object{            
                 Write-Progress -Activity $("Starting search threads") -Status $("Started " + ($i + 1) + " of " + $totalThreads) -Id $progressId -ParentId $parentProgressId -PercentComplete (($i + 1) / $totalThreads * 100)
                 $_
             }
@@ -849,10 +867,10 @@ function Edit-HostsFile{
     {
         if (-not(Get-Command "sudo" -ErrorAction SilentlyContinue))
         {
-            sudo notepad++ 'C:\windows\system32\Drivers\etc\hosts'
+            Write-Host "You must have admin rights to edit hosts file.  Please open a new console window with admin rights."
+            return
         }
-        
-        Write-Host "You must have admin rights to edit hosts file.  Please open a new console window with admin rights."
+        sudo notepad++ 'C:\windows\system32\Drivers\etc\hosts'        
     }
 }
 
@@ -1152,6 +1170,36 @@ function Clear-List([Parameter(Mandatory=$true)][string]$storePath)
     }
 }
 
+function Read-Required(
+    [Parameter(Mandatory=$true)]$prompt,
+    [string[]]$values,
+    [switch]$emptyIsLastValue,
+    [string]$valueDescription=$null
+    )
+{
+    if(!$valueDescription)
+    {
+        $valueDescription = $values -join "/"
+        if($emptyIsLastValue)
+        {
+            $valueDescription += " or Enter"
+        }
+        $valueDescription = "[$valueDescription]"
+    }
+    
+    do
+    {
+        $answer = $(Read-Host "$prompt $valueDescription").Trim()        
+    } while (!($values -contains $answer -or($emptyIsLastValue -and !$answer)))
+    
+    if(!$answer -and $emptyIsLastValue)
+    {
+        $answer = $values[-1]
+    }
+    
+    return $answer
+}
+
 # helper to turn PSCustomObject into a list of key/value pairs
 function Get-ObjectMembers {
     [CmdletBinding()]
@@ -1183,31 +1231,9 @@ function Get-IsNullOrEmpty([Parameter(ValueFromPipeline=$True)]$value=$null)
         return @($value).Count -eq 0
     }
     
-    if($value -is [string])
-    {
-        return [string]::IsNullOrEmpty($value)
-    }
-    
     return $false
 }
 Set-Alias IsNullOrEmpty Get-IsNullOrEmpty -Scope Global
-
-function Download-AndExtractZip($url, $destinationFolder)
-{
-    $zipFile = Download-File $url
-    $extractedFolderName = [io.path]::GetFileNameWithoutExtension($zipFile)
-    $destination = Join-Path $destinationFolder $extractedFolderName
-    Expand-Archive -Path $zipFile -DestinationPath $destination;
-}
-
-function Download-File($url)
-{
-    $downloadFolder = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
-    $filePath = Join-Path $downloadFolder (Split-Path -Path $url -Leaf) 
-    
-    Invoke-WebRequest -Uri $url -OutFile $filePath 
-    return $filePath
-}
 
 if(-not(Test-Path Variable:\localModules) -or $localModules -eq $null)
 {

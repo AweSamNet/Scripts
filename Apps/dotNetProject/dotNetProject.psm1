@@ -4,8 +4,9 @@ param(
 )
 
 new-alias msb2019 "$drive\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe" -Scope Global
+new-alias msb60 "C:\Users\samlo\AppData\Local\JetBrains\Installations\Rider212\tools\MSBuild\Current\Bin\MSBuild.exe"
 
-new-alias msb msb2019 -Scope Global
+new-alias msb msb60 -Scope Global
 
 #mstest location
 $mst = "$drive\Program Files (x86)\Microsoft Visual Studio\2019\Professional\Common7\IDE\MSTest.exe"
@@ -14,6 +15,12 @@ new-alias mst $mst -Scope Global
 #vstest location
 $vstest = "$drive\Program Files (x86)\Microsoft Visual Studio\2019\Professional\Common7\IDE\CommonExtensions\Microsoft\TestWindow\vstest.console.exe"
 new-alias vstest $vstest -Scope Global
+
+# nunit 
+$nunit = "$drive\ProgramData\chocolatey\bin\nunit3-console.exe"
+
+# general test runner
+new-alias testrunner $nunit -Scope Global
 
 if(-not(Test-Path Variable:\dotNetProjects) -or !$dotNetProjects)
 {
@@ -160,6 +167,7 @@ function Build(
     [switch]$all, 
     [switch]$build, 
     [switch]$rebase, 
+    [switch]$ignoreWatched,
     [switch]$tests,
     [string]$projectNames = $null,
     [string[]]$testsToRun = $null,
@@ -198,7 +206,7 @@ function Build(
         
         if($all -or $rebase)
         {           
-            Update-ProjectGit -project:$project -gitpDuration:([ref]$fetchTime) -y:$y -pause:$pause | % {
+            Update-ProjectGit -project:$project -gitpDuration:([ref]$fetchTime) -y:$y -ignoreWatched:$ignoreWatched -pause:$pause | % {
                 $output += $_
                 $_
             }
@@ -236,10 +244,10 @@ function Build(
         {
             $testsStart = $(Get-Date)
             
-            # if(-not $ignoreTestCategories)
-            # {
-                # $ignoreTestCategories = @("IntegrationTest", "NotContinuous")
-            # }
+            if(-not $ignoreTestCategories)
+            {
+                $ignoreTestCategories = @("Integration")
+            }
             
             Run-ProjectTests -project:$project -testsToRun:$testsToRun -categories:$testCategories -ignoredCategories:$ignoreTestCategories
 
@@ -450,7 +458,7 @@ function Start-Build(
 function Get-ProjectWatchForBranch([Parameter(Mandatory=$true)]$project, [string]$branch)
 {
     $project = getProject $project    
-    return Get-ProjectWatchedBranches | where { $_.branch -eq $branch } | select -First 1    
+    return Get-ProjectWatchedBranches $project | where { $_.branch -eq $branch } | select -First 1    
 }
 
 $rebaseFailed = "Rebase was not able to continue."
@@ -460,6 +468,7 @@ function Update-ProjectGit(
     [ref]$gitpDuration, 
     [switch]$doWatch=$true, 
     [switch]$y,
+    [switch]$ignoreWatched,
     [switch]$pause)
 {        
     $project = getProject $project
@@ -500,7 +509,15 @@ function Update-ProjectGit(
     
     $gitpStart = $(get-date) 
 
-    gitp -baseRemote:$baseRemote -baseBranch:$baseBranch -a -pushRemote:$project.PushRemote -branchWatchStorePath:$watchPath -silent:$y -subModuleUpdate -pause:$pause | % {
+    gitp `
+        -baseRemote:$baseRemote `
+        -baseBranch:$baseBranch `
+        -a `
+        -pushRemote:$project.PushRemote `
+        -branchWatchStorePath:$watchPath `
+        -ignoreWatched:$ignoreWatched `
+        -silent:$y `
+        -pause:$pause | % {
         if($_ -match "(--abort|CONFLICT|It looks like git-am is in progress)")
         {
             $rebaseSuccess = $false
@@ -588,16 +605,34 @@ function New-ProjectBranch(
         $branchFromRemote = $project.BaseRemote
     }
 
+    $originalBranch = Get-CurrentBranch
     if(!$branchFrom)
     {
-        $branchFrom = $project.BaseBranch
+        $answer = Read-Required `
+            -prompt "Do you want to branch from the branch $($originalBranch)?" `
+            -values "n","y" `
+            -emptyIsLastValue
+            
+        if($answer -match "n")
+        {
+            $branchFrom = $project.BaseBranch
+        }
+        elseif($answer -match "y")
+        {
+            $branchFrom = $originalBranch
+        }
+    }
+    
+    if($branchFrom -ne $project.BaseBranch)
+    {
+        Watch-ProjectBranch $project -baseBranch $branchFrom -baseRemote $branchFromRemote
     }
 
     go $project
     
-    $originalBranch = Get-CurrentBranch
     New-Branch -branchName:$branchName -branchFromRemote:$branchFromRemote -branchFrom:$branchFrom -noPrompt:$noPrompt
-    Update-ProjectGit $project
+    
+    Update-ProjectGit $project -ignoreWatched:$noPrompt
     
     # push it to set the default upstream
     git push -u $project.PushRemote $branchName -f
@@ -634,7 +669,7 @@ function Watch-ProjectBranch(
     }
     
     Watch-Branch -branch:$branch `
-                 -storePath getBranchWatchFilePath $project `
+                 -storePath $(getBranchWatchFilePath $project) `
                  -repoPath $project.RepositoryPath `
                  -baseRemote:$baseRemote `
                  -baseBranch:$baseBranch `
@@ -648,13 +683,13 @@ function Unwatch-ProjectBranch(
     [string]$storePath)
 {
     $project = getProject $project    
-    Unwatch-Branch -branch:$branch -storePath getBranchWatchFilePath $project
+    Unwatch-Branch -branch:$branch -storePath $(getBranchWatchFilePath $project)
 }
 
 function Get-ProjectWatchedBranches($project)
 {
     $project = getProject $project
-    Get-WatchedBranches getBranchWatchFilePath $project
+    Get-WatchedBranches -storePath $(getBranchWatchFilePath $project)
 }
 
 function Watch-ProjectBuildKeywords(
@@ -732,23 +767,24 @@ function Run-ProjectTests(
 
     $command = '$failedTests = @();'
     $command += '$results = "";'
-    $command += "vstest "
+    #$command += "vstest "
+    $command += "testrunner "
     
     $project.TestPaths | %{ $command += "'$_' "}
     
     
     if($testsToRun)
     {
-        $command += " /tests:"
-        $command += $testsToRun -join ','
+        #$command += " /tests:"
+        $command += $testsToRun -join ' '
     }
 
     Write-Host
-    $testCaseFilter = $null
-    if($categories -or $ignoredCategories)
-    {    
-        $command += " --testadapterpath:. "
-    }
+    $testCaseFilters = @()
+    # if($categories -or $ignoredCategories)
+    # {    
+        # $command += " --testadapterpath:. "
+    # }
         
     $categoriesFilter = $null
     if($categories)
@@ -756,8 +792,10 @@ function Run-ProjectTests(
         Write-Host "Running Test Categories: " -NoNewline
         Write-Highlight $($categories -join " | ") -highlightColor Green
         
-        $categoriesFilter = "($(($categories | %{ return "Category=$_" }) -join "|"))"
-        $testCaseFilter += $categoriesFilter
+        $categories = $categories | % { return "cat == $_" } 
+        $categoriesFilter = $categories -join " || "
+        $categoriesFilter = "($categoriesFilter)"
+        $testCaseFilters += $categoriesFilter
     }
     
     $ignoredCategoriesFilter = $null
@@ -766,18 +804,15 @@ function Run-ProjectTests(
         Write-Host "Ignoring Tests: " -NoNewline
         Write-Highlight $($ignoredCategories -join " | ")
 
-        $ignoredCategoriesFilter += "($(($ignoredCategories | %{ return "Category!=$_" }) -join "&"))"
-        
-        if($categoriesFilter)
-        {
-            $testCaseFilter += "&"
-        }
-        
-        $testCaseFilter += $ignoredCategoriesFilter
+        $ignoredCategories = $ignoredCategories | %{ return "cat != $_" }        
+        $ignoredCategoriesFilter = $ignoredCategories -join " && "
+        $ignoredCategoriesFilter = "($ignoredCategoriesFilter)"
+        $testCaseFilters += $ignoredCategoriesFilter
     }
-    if($testCaseFilter -and -not $testsToRun)
+    if($testCaseFilters -and -not $testsToRun)
     {
-        $testCaseFilter = " --TestCaseFilter:`"$testCaseFilter`""
+        $testCaseFilter = $testCaseFilters -join " && "
+        $testCaseFilter = " --where `"$testCaseFilter`""
 
         Write-Host $testCaseFilter
         $command += $testCaseFilter
@@ -791,7 +826,8 @@ function Run-ProjectTests(
     {
         $command += @'
 | % { 
-    if( $_ -match "^\s*failed\s+")
+    # if( $_ -match "^\s*failed\s+")
+    if( $_ -match "^\s*\d+\)\s+Error\s+:")
     {
         $failedTests += $_
     }
@@ -808,6 +844,10 @@ function Run-ProjectTests(
         $command += ' $failedTests (Get-CurrentBranch) $results ` '
     }
 
+    # Write-Host $command
+    
+    # pause 
+    
     $lastBaseBranchTestResults = Get-ProjectLastTestResults -project:$project -branch:$project.BaseBranch 
     
     Invoke-Expression $command -ErrorAction SilentlyContinue -ErrorVariable Err `

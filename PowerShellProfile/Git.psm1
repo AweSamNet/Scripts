@@ -37,6 +37,7 @@ function Get-LatestCode(
     [switch]$subModuleUpdate,
     [switch]$silent,
     $branchWatchStorePath,
+    [switch]$ignoreWatched,
     [switch]$pause)
 {    
     $success = $False
@@ -82,7 +83,7 @@ function Get-LatestCode(
     }
 
     
-    # now push base branch to push remote if different to keep it up to date
+    # now push base branch to push remote if the push remote is different to keep it up to date
     if($pushRemote -and $baseRemote -ne $pushRemote)
     {
         Write-Host "Pushing rebased $baseBranch to $pushRemote"
@@ -96,7 +97,7 @@ function Get-LatestCode(
     }
     
     # if we are watching any branches then rebase them here
-    if($branchWatchStorePath -and (Test-Path $branchWatchStorePath))
+    if(!$ignoreWatched -and $branchWatchStorePath -and (Test-Path $branchWatchStorePath))
     {
         $body = Get-Content $branchWatchStorePath -Raw 
         
