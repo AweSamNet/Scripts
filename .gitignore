@@ -7,8 +7,6 @@ desktop.ini
 *.log
 /PowerShellProfile/Watched
 /PowerShellProfile/smartthingskey.txt
-Apps
 /PowerShellProfile/githubkey.txt
-/Watch-PiHole.ps1
-/Watch-SmartThings.ps1
-/NightlyBackup.ps1
+Watched
+/Apps/SmartThings/smartthingskey.txt
