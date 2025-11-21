@@ -346,27 +346,29 @@ function Format-SystemNotification([Parameter(ValueFromPipeline = $true)] $notif
 }
 
 function Format-SystemNotifications($notifications)
-{
-    $esc = "$([char]27)"
-    $defaultForeground = "$esc[0m"
-    
+{    
     if(!$notifications -or !($notifications |any) )
     {
         return
     }
 
-    return $notifications | Sort-Object -Property `
-        @{Expression = {$_.Value.Severity}; Ascending = $true}, `
-        @{Expression = {$_.Value.Date}; Ascending = $true} | Format-SystemNotification | Format-Table -AutoSize
+    return $notifications | Format-SystemNotification | Format-Table -AutoSize
 }
 
 function Display-SystemNotifications()
 {
     do
     {
-        $notifications = Get-SystemNotifications
+        $notifications = @()
+        (Get-SystemNotifications)  `
+            | Sort-Object -Property `
+                @{Expression = {$_.Value.Severity}; Ascending = $true}, `
+                @{Expression = {$_.Value.Date}; Ascending = $true} `
+            | % { $notifications += $_ }
+            
         if(!$notifications)
         {
+            pause "No new notifications to display."
             return
         }
 

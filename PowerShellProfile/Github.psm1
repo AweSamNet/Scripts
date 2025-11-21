@@ -169,6 +169,14 @@ function Find-HighlightGithubCode([string[]]$searchString, [Parameter(Mandatory=
 
 }
 
+function Get-GithubAllIssues(
+    [Parameter(Mandatory=$true)][string]$owner, 
+    [Parameter(Mandatory=$true)][string]$repo, 
+    [string]$page = 1)
+{
+    GithubGet -partialUri "/repos/$owner/$repo/issues?state=all&per_page=100&page=$page" -ArgumentList $args -headers @{Accept = "application/vnd.github.v3.text-match+json"}
+}
+
 function Get-GithubIssue(
     [Parameter(Mandatory=$true)][string]$owner, 
     [Parameter(Mandatory=$true)][string]$repo, 
@@ -281,6 +289,7 @@ function GithubGet([Parameter(Mandatory=$true)][string]$partialUri, [string[]]$A
         $limitReached = $false
         $resetTime = $null
 
+
         $rateLimits = Get-GithubRateLimits -username:$username -password$password -headers:$headers
         
         if($isSearch)    
@@ -315,7 +324,10 @@ function GithubGet([Parameter(Mandatory=$true)][string]$partialUri, [string[]]$A
             return Invoke-RestMethod -Method Get -Uri $uri -Headers $headers -Credential $credential -ContentType "application/json"    
         }
         catch
-        {                
+        {        
+        Write-Error $_
+        
+    pause "failed"
             # if failure retry 
             $totalRetrySeconds += $retryDelay
             $retryTime = [DateTime]::UtcNow.AddSeconds($retryDelay)
@@ -466,6 +478,36 @@ function Watch-GithubIssue(
 
     $output = New-Item -ItemType File -Force -Path $storePath -Value $body
     Get-WatchedGithubIssues $storePath
+}
+
+function Export-GithubIssues {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        $issues,
+
+        [string] $OutputPath = "github-issues.csv"
+    )
+
+    $output = @()
+
+    foreach ($issue in $issues) {
+        $labels = ($issue.labels | ForEach-Object { $_.name }) -join ", "
+        $output += [PSCustomObject]@{
+            Id         = $issue.number
+            Title      = $issue.title
+            State      = $issue.state
+            Labels     = $labels
+            CreatedAt  = $issue.created_at
+            UpdatedAt  = $issue.updated_at
+            Assignee   = if ($issue.assignee) { $issue.assignee.login } else { "" }
+            Author     = $issue.user.login
+            Body       = ($issue.body -replace "`r`n", " " -replace "`n", " ") -replace ",", ";"
+        }
+    }
+
+    $output | Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8
+    Write-Output "Exported $($output.Count) issues to '$OutputPath'"
 }
 
 function Get-WatchedGithubIssues([string]$storePath = $defaultWatchedIssuesPath)

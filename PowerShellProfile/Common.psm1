@@ -107,6 +107,42 @@ function Get-Sha1Hash()
     }
 }
 
+function Get-WebhookSignature {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Payload,
+
+        [ValidateSet('SHA256','SHA1','MD5')]
+        [string]$Algorithm = 'SHA256',
+
+        [Parameter(Mandatory)]
+        [string]$Secret
+    )
+
+    # Convert secret and payload to bytes
+    $keyBytes     = [System.Text.Encoding]::UTF8.GetBytes($Secret)
+    $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes($Payload)
+
+    # Choose HMAC algorithm
+    switch ($Algorithm) {
+        'SHA256' { $hmac = [System.Security.Cryptography.HMACSHA256]::new($keyBytes); $prefix = 'sha256=' }
+        'SHA1'   { $hmac = [System.Security.Cryptography.HMACSHA1]::new($keyBytes);   $prefix = 'sha1='   }
+        'MD5'    { $hmac = [System.Security.Cryptography.HMACMD5]::new($keyBytes);    $prefix = 'md5='    }
+        default  { throw "Unsupported algorithm: $Algorithm" }
+    }
+
+    # Compute the HMAC hash
+    $hashBytes = $hmac.ComputeHash($payloadBytes)
+
+    # Convert to lowercase hex string
+    $hex = ($hashBytes | ForEach-Object { $_.ToString('x2') }) -join ''
+
+    # Return in header format
+    return "$prefix$hex"
+}
+
+
 ## Open URL in Browsers
 function Open-Chrome($url)
 {
@@ -863,15 +899,13 @@ function Test-IsAdmin
 
 # Quickly edit your hosts file
 function Edit-HostsFile{
-    if(-not(Test-IsAdmin))
+
+    if (-not(Get-Command "sudo" -ErrorAction SilentlyContinue))
     {
-        if (-not(Get-Command "sudo" -ErrorAction SilentlyContinue))
-        {
-            Write-Host "You must have admin rights to edit hosts file.  Please open a new console window with admin rights."
-            return
-        }
-        sudo notepad++ 'C:\windows\system32\Drivers\etc\hosts'        
+        Write-Host "You must have admin rights to edit hosts file.  Please install sudo."
     }
+        
+    sudo notepad++ 'C:\windows\system32\Drivers\etc\hosts'
 }
 
 function Test-InlineIf($if, $ifTrue, $ifFalse) {
@@ -992,11 +1026,14 @@ function Get-CurrentUserCredentials ($message = $null)
 
 function Suspend-Console([string]$message)
 {
+    $messages = @();
     if($message)
     {
-        Write-Host "$message.........."
+        $messages += $message
     }
-    Write-Host "Press any key to continue..."
+    $messages += "Press any key to continue..."
+    
+    Write-Host ($messages -join "  ")
     try
     {
         $k = $host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
