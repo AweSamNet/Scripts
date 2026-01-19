@@ -1,0 +1,93 @@
+[
+    {
+        "Id":  1,
+        "Value":  {
+                      "AppName":  "7zip.install",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  3,
+        "Value":  {
+                      "AppName":  "notepadplusplus",
+                      "args":  "--x86"
+                  }
+    },
+    {
+        "Id":  4,
+        "Value":  {
+                      "AppName":  "filezilla",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  5,
+        "Value":  {
+                      "AppName":  "sudo",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  7,
+        "Value":  {
+                      "AppName":  "git",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  8,
+        "Value":  {
+                      "AppName":  "tortoisegit",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  9,
+        "Value":  {
+                      "AppName":  "poshgit",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  10,
+        "Value":  {
+                      "AppName":  "putty",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  11,
+        "Value":  {
+                      "AppName":  "firacode",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  17,
+        "Value":  {
+                      "AppName":  "screentogif",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  20,
+        "Value":  {
+                      "AppName":  "NuGet.CommandLine",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  21,
+        "Value":  {
+                      "AppName":  "netfx-4.6.2-devpack",
+                      "args":  ""
+                  }
+    },
+    {
+        "Id":  22,
+        "Value":  {
+                      "AppName":  "procexp",
+                      "args":  ""
+                  }
+    }
+]
