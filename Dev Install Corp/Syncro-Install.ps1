@@ -56,27 +56,24 @@
         
         $results = ConvertFrom-Json $content 
         
-        try{
-            if($results -is [array] -and $results.Count -le 1)
-            {
-                # Use Write-Output -NoEnumerate to preserve array
-                Write-Output -NoEnumerate ({$results}.Invoke())
-            }
-            elseif($results -is [array])
-            {
-                Write-Output -NoEnumerate ({$results}.Invoke())
-            }
-            else
-            {
-                # Single item - wrap in array
-                Write-Output -NoEnumerate @($results)
-            }
+        if ($null -eq $results) {
+            Write-Output -NoEnumerate @()
+            return
         }
-        catch
-        {
-            Write-Error "Failed trying to invoke file $storePath"
-            throw
+        
+        # Force conversion to array using ArrayList then ToArray() to avoid Collection types
+        # This matches the implementation in Common.psm1 for consistency
+        $arrayList = [System.Collections.ArrayList]::new()
+        if ($results -is [Array]) {
+            foreach ($item in $results) {
+                [void]$arrayList.Add($item)
+            }
+        } else {
+            [void]$arrayList.Add($results)
         }
+        
+        # Use Write-Output -NoEnumerate to prevent PowerShell from unwrapping single-element arrays
+        Write-Output -NoEnumerate $arrayList.ToArray()
     }
     
     function Set-PageantStartup($keyFiles, $keysDirectory)
@@ -316,27 +313,24 @@ Closing this window, please rerun the install script.
 
         $results = ConvertFrom-Json $content
 
-        try{
-            if($results -is [array] -and $results.Count -le 1)
-            {
-                # Use Write-Output -NoEnumerate to preserve array
-                Write-Output -NoEnumerate ({$results}.Invoke())
-            }
-            elseif($results -is [array])
-            {
-                Write-Output -NoEnumerate ({$results}.Invoke())
-            }
-            else
-            {
-                # Single item - wrap in array
-                Write-Output -NoEnumerate @($results)
-            }
+        if ($null -eq $results) {
+            Write-Output -NoEnumerate @()
+            return
         }
-        catch
-        {
-            Write-Error "Failed trying to invoke file $storePath"
-            throw
+        
+        # Force conversion to array using ArrayList then ToArray() to avoid Collection types
+        # This matches the implementation in Common.psm1 for consistency
+        $arrayList = [System.Collections.ArrayList]::new()
+        if ($results -is [Array]) {
+            foreach ($item in $results) {
+                [void]$arrayList.Add($item)
+            }
+        } else {
+            [void]$arrayList.Add($results)
         }
+        
+        # Use Write-Output -NoEnumerate to prevent PowerShell from unwrapping single-element arrays
+        Write-Output -NoEnumerate $arrayList.ToArray()
     }
     
     function Is-Installed( [Parameter(Mandatory=$true)][string]$software)
