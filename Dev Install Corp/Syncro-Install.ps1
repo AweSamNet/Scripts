@@ -50,7 +50,7 @@
         $content = Get-Content $storePath -Raw
         
         if(!$content){
-            return
+            return @()
         }
         
         $results = ConvertFrom-Json $content 
@@ -303,7 +303,7 @@ Closing this window, please rerun the install script.
         $content = Get-Content $storePath -Raw
 
         if(!$content){
-            return
+            return @()
         }
 
         $results = ConvertFrom-Json $content

@@ -997,7 +997,7 @@ function Get-JsonFromFile([Parameter(Mandatory)][string]$storePath){
     $content = Get-Content $storePath -Raw
     
     if(!$content){
-        return
+        return @()
     }
     
     $results = $content | ConvertFrom-Json
