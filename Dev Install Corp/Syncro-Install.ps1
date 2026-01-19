@@ -50,7 +50,8 @@
         $content = Get-Content $storePath -Raw
         
         if(!$content){
-            return @()
+            Write-Output -NoEnumerate @()
+            return
         }
         
         $results = ConvertFrom-Json $content 
@@ -58,11 +59,17 @@
         try{
             if($results -is [array] -and $results.Count -le 1)
             {
-                return ,({$results}.Invoke())
+                # Use Write-Output -NoEnumerate to preserve array
+                Write-Output -NoEnumerate ({$results}.Invoke())
+            }
+            elseif($results -is [array])
+            {
+                Write-Output -NoEnumerate ({$results}.Invoke())
             }
             else
             {
-                return {$results}.Invoke()
+                # Single item - wrap in array
+                Write-Output -NoEnumerate @($results)
             }
         }
         catch
@@ -303,7 +310,8 @@ Closing this window, please rerun the install script.
         $content = Get-Content $storePath -Raw
 
         if(!$content){
-            return @()
+            Write-Output -NoEnumerate @()
+            return
         }
 
         $results = ConvertFrom-Json $content
@@ -311,11 +319,17 @@ Closing this window, please rerun the install script.
         try{
             if($results -is [array] -and $results.Count -le 1)
             {
-                return ,({$results}.Invoke())
+                # Use Write-Output -NoEnumerate to preserve array
+                Write-Output -NoEnumerate ({$results}.Invoke())
+            }
+            elseif($results -is [array])
+            {
+                Write-Output -NoEnumerate ({$results}.Invoke())
             }
             else
             {
-                return {$results}.Invoke()
+                # Single item - wrap in array
+                Write-Output -NoEnumerate @($results)
             }
         }
         catch

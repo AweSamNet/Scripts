@@ -997,7 +997,9 @@ function Get-JsonFromFile([Parameter(Mandatory)][string]$storePath){
     $content = Get-Content $storePath -Raw
     
     if(!$content){
-        return @()
+        # Return empty array using Write-Output to ensure it's an array
+        Write-Output -NoEnumerate @()
+        return
     }
     
     $results = $content | ConvertFrom-Json
@@ -1005,7 +1007,8 @@ function Get-JsonFromFile([Parameter(Mandatory)][string]$storePath){
     # Explicitly convert to Object[] array to avoid Collection serialization in PowerShell 5.1
     # This ensures consistent behavior across PS 5.1 and PS 7+
     if ($null -eq $results) {
-        return @()
+        Write-Output -NoEnumerate @()
+        return
     }
     
     # Force conversion to array using ArrayList then ToArray() to avoid Collection types
@@ -1018,7 +1021,9 @@ function Get-JsonFromFile([Parameter(Mandatory)][string]$storePath){
         [void]$arrayList.Add($results)
     }
     
-    return $arrayList.ToArray()
+    # Use Write-Output -NoEnumerate to prevent PowerShell from unwrapping single-element arrays
+    # This ensures the function always returns an array, even with one item
+    Write-Output -NoEnumerate $arrayList.ToArray()
 }
 
 Set-Alias Get-Watched Get-JsonFromFile -Scope Global
