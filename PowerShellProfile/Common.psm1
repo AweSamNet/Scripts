@@ -1183,7 +1183,7 @@ function Remove-Record(
 )
 {
     $list = Get-Records $storePath
-    
+    $list = @($list)
     $toRemove = $null
 
     if($id -gt 0)

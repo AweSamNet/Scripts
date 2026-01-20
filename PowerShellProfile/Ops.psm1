@@ -286,6 +286,19 @@ public enum NotificationSeverity {
 }
 '@
 
+function Notify-HomeAssistant($title, $message, $level = "info")
+{
+    $uri = "http://homeassistant.local:8123/api/webhook/ps_notify"
+
+    $body = @{
+      title   = $title
+      message = $message
+      level   = $level
+    } | ConvertTo-Json
+
+    Invoke-RestMethod -Method Post -Uri $uri -ContentType "application/json" -Body $body
+}
+
 function New-SystemNotification (
     [Parameter(Mandatory)][NotificationSeverity]$severity,
     [Parameter(Mandatory)][string]$source,

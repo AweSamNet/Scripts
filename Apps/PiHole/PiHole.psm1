@@ -219,10 +219,15 @@ function Watch-PiHole()
             New-SystemNotification -severity:Low -source:"Watch-PiHole" -message:$message
         }
     }
+    $onWarnHandler = { 
+        param($message)       
+        Notify-HomeAssistant -title:"Device Detected" -message:$message
+    }
     
-    if(Find-PiHoleWatchedAndUnknownClients)
+    if(Find-PiHoleWatchedAndUnknownClients $onWarnHandler)
     {
         $message = "Pi-Hole registered unkonwn devices on the network.  View Log."
+        $message
         New-BurntToastNotification -Text $message
         New-SystemNotification -severity:Low -source:"Watch-PiHole" -message:$message
     }
@@ -258,7 +263,8 @@ function Get-PiHoleClientsAlerts([string]$storePath = $defaultPiHoleClientsAlert
     $esc = "$([char]27)"
     do
     {
-        $alerts = Get-JsonFromFile $storePath
+        $alerts = Get-Records $storePath
+        $alerts = @($alerts)
         
         if($alerts -eq $null -or $alerts.Count -eq 0)
         {
@@ -435,7 +441,7 @@ function Add-PiHoleClientsAlerts(
     return $false
 }
 
-function Find-PiHoleWatchedAndUnknownClients()
+function Find-PiHoleWatchedAndUnknownClients([scriptblock]$onWarnHandler = $null)
 {
     $knownClients = Get-WatchedPiHoleKnownClients
     
@@ -483,6 +489,24 @@ function Find-PiHoleWatchedAndUnknownClients()
             
             if(-not $matchingKnown -or($matchingKnown -and $matchingKnown.Value.Warn -eq $true))
             {
+                if($onWarnHandler)
+                {
+                    $payload = [pscustomobject]@{
+                      ips       = @(
+                        @($client.ips) | ForEach-Object {
+                          "ip=$($_.ip); name = $($_.name)"
+                        }
+                      )
+                      hwaddr    = $client.hwaddr
+                      id        = $client.id
+                      macVendor = $client.macVendor
+
+                    }
+
+                    $json = $payload | ConvertTo-Json -Depth 5
+                    &$onWarnHandler $json
+                }
+                
                 $success = Add-PiHoleClientsAlerts $server.Key $deviceName $client.numQueries               
                 $found = $found -or $success
             }
