@@ -1429,9 +1429,9 @@ function Watch-SmartThings([string]$watchedLocksStorePath = $defaultWatchedLocks
         Get-SmartThingsRooms $_.locationId
     }
 
-    $deviceChanges += Watch-SmartThingsLocks -locations:$locations -rooms:$rooms
+    $deviceChanges += @(Watch-SmartThingsLocks -locations:$locations -rooms:$rooms -watchedRateLimitsStorePath:$watchedRateLimitsStorePath)
     
-    $deviceChanges += Watch-SmartThingsTemperatureMonitors -locations:$locations -rooms:$rooms
+    $deviceChanges += @(Watch-SmartThingsTemperatureMonitors -locations:$locations -rooms:$rooms -watchedRateLimitsStorePath:$watchedRateLimitsStorePath)
 
     foreach($change in $deviceChanges)
     {        
