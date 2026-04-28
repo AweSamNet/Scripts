@@ -952,7 +952,7 @@ function Get-WatchedSmartThingsLockHistory($id, [Nullable[DateTime]]$from, [Null
                 {
                     $fileHistory = $fileHistory | where {(!$from -or $from -le $_.date) -and (!$to -or $_.date -le $to)}
                 }
-                $history = $fileHistory + $history
+                $history = @($fileHistory) + $history
             }
         }
     }
